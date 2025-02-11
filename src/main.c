@@ -21,7 +21,6 @@ jis-gui. If not, see <https://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <stdlib.h>
 
-
 const int SQUARE_SIZE = 100;
 const Color GRID_WHITE_COLOR = (Color){0xf0, 0xf0, 0xf0, 0xff};
 const Color GRID_BLACK_COLOR = (Color){0xa0, 0xa0, 0xa0, 0xff};
@@ -50,15 +49,65 @@ int main(int argc, char *argv[]) {
     UnloadImage(grid_image);
   }
 
+  // Load the piece textures.
+  Texture2D white_pawn_texture = LoadTexture("assets/wP.png");
+  Texture2D white_knight_texture = LoadTexture("assets/wN.png");
+  Texture2D black_pawn_texture = LoadTexture("assets/bP.png");
+  Texture2D black_knight_texture = LoadTexture("assets/bN.png");
+
+  SetTextureFilter(white_pawn_texture, TEXTURE_FILTER_TRILINEAR);
+  SetTextureFilter(white_knight_texture, TEXTURE_FILTER_TRILINEAR);
+  SetTextureFilter(black_pawn_texture, TEXTURE_FILTER_TRILINEAR);
+  SetTextureFilter(black_knight_texture, TEXTURE_FILTER_TRILINEAR);
+
+  char board[8][8] = {
+      "np    PN", "pp    PP", "        ", "        ",
+      "        ", "        ", "PP    pp", "NP    pn",
+  };
+
   while (!WindowShouldClose()) {
     BeginDrawing();
     DrawTextureRec(grid_texture,
                    (Rectangle){0, 0, grid_texture.width, grid_texture.height},
                    (Vector2){0, 0}, WHITE);
+
+    for (int row = 0; row < 8; row++) {
+      for (int col = 0; col < 8; col++) {
+        Texture2D *texture;
+        switch (board[row][col]) {
+        case 'P':
+          texture = &white_pawn_texture;
+          break;
+        case 'N':
+          texture = &white_knight_texture;
+          break;
+        case 'p':
+          texture = &black_pawn_texture;
+          break;
+        case 'n':
+          texture = &black_knight_texture;
+          break;
+        default:
+          continue;
+        }
+
+        // Upsize the texture to the square size and draw it.
+        DrawTexturePro(*texture,
+                       (Rectangle){0, 0, texture->width, texture->height},
+                       (Rectangle){col * SQUARE_SIZE, row * SQUARE_SIZE,
+                                   SQUARE_SIZE, SQUARE_SIZE},
+                       (Vector2){0, 0}, 0, WHITE);
+      }
+    }
+
     EndDrawing();
   }
 
   // Deinitialize resources.
   UnloadTexture(grid_texture);
+  UnloadTexture(white_pawn_texture);
+  UnloadTexture(white_knight_texture);
+  UnloadTexture(black_pawn_texture);
+  UnloadTexture(black_knight_texture);
   CloseWindow();
 }
