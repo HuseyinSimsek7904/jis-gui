@@ -25,6 +25,7 @@ jis-gui. If not, see <https://www.gnu.org/licenses/>.
 #include <stdlib.h>
 
 const int SQUARE_SIZE = 100;
+const Color BACKGROUND_COLOR = (Color){0x20, 0x20, 0x20, 0xff};
 const Color GRID_WHITE_COLOR = (Color){0xf0, 0xf0, 0xf0, 0xff};
 const Color GRID_BLACK_COLOR = (Color){0xa0, 0xa0, 0xa0, 0xff};
 const Color GRID_HELD_COLOR = (Color){0xcc, 0xaa, 0x22, 0x80};
@@ -116,6 +117,8 @@ int main(int argc, char *argv[]) {
     }
 
     BeginDrawing();
+    ClearBackground(BACKGROUND_COLOR);
+
     DrawTextureRec(grid_texture,
                    (Rectangle){0, 0, grid_texture.width, grid_texture.height},
                    (Vector2){BOARD_RECT.x, BOARD_RECT.y}, WHITE);
