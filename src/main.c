@@ -20,6 +20,7 @@ jis-gui. If not, see <https://www.gnu.org/licenses/>.
 #include <raylib.h>
 
 #include <assert.h>
+#include <poll.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -27,17 +28,18 @@ jis-gui. If not, see <https://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/poll.h>
 #include <unistd.h>
 
 const int GRID_SQUARE_SIZE = 100;
-const int GRID_CIRCLE_RADIUS = 20;
+const float GRID_CIRCLE_RATIO = 0.3;
 
 const Color BACKGROUND_COLOR = (Color){0x20, 0x20, 0x20, 0xff};
 const Color GRID_WHITE_COLOR = (Color){0xf0, 0xf0, 0xf0, 0xff};
 const Color GRID_BLACK_COLOR = (Color){0xa0, 0xa0, 0xa0, 0xff};
 const Color GRID_HELD_COLOR = (Color){0xcc, 0xaa, 0x22, 0x80};
 const Color GRID_TO_COLOR = (Color){0x55, 0x55, 0x55, 0x80};
-const Color GRID_CAPTURE_COLOR = (Color){0xff, 0x00, 0xff, 0x80};
+const Color GRID_CAPTURE_COLOR = (Color){0xff, 0x00, 0x00, 0x80};
 
 const Rectangle BOARD_RECT =
     (Rectangle){50, 50, 8 * GRID_SQUARE_SIZE, 8 * GRID_SQUARE_SIZE};
@@ -66,6 +68,13 @@ int window_vec_to_id(Vector2 vec) {
 
 const char *JIS_EXECUTABLE = "jazzinsea";
 
+typedef struct {
+  int from;
+  int to;
+  int capture;
+  char string[5];
+} move;
+
 void ask_jis(int child_stdin, int child_stdout, char *buffer,
              size_t buffer_size, const char *format, ...) {
   va_list args;
@@ -73,19 +82,71 @@ void ask_jis(int child_stdin, int child_stdout, char *buffer,
 
   vdprintf(child_stdin, format, args);
 
-  int length = read(child_stdout, buffer, buffer_size);
+  int length = read(child_stdout, buffer, buffer_size - 1);
   if (length < 0) {
     fprintf(stderr, "error: reading from %s failed\n", JIS_EXECUTABLE);
     perror("read");
     exit(1);
   }
+  buffer[length] = '\0';
 }
 
-typedef struct {
-  int from;
-  int to;
-  int capture;
-} move;
+move desc_move_jis(int child_stdin, int child_stdout, char *string) {
+  // Ask jazzinsea to describe a move.
+  // This will fill the buffer with 'from', 'to' and 'capture'
+  // position strings seperated by spaces.
+  char first_word[256];
+  ask_jis(child_stdin, child_stdout, first_word, sizeof(first_word),
+          "descmove %s\n", string);
+
+  // Convert into a list of strings separated by \0.
+  char *second_word = strchr(first_word, ' ');
+  if (!second_word) {
+    fprintf(stderr, "error: invalid description of move\n");
+    return (move){.from = POSITION_INV};
+  }
+  *(second_word++) = '\0';
+
+  char *third_word = strchr(second_word + 1, ' ');
+  if (!second_word) {
+    fprintf(stderr, "error: invalid description of move\n");
+    return (move){.from = POSITION_INV};
+  }
+  *(third_word++) = '\0';
+
+  // Create the move object.
+  move result = (move){.from = str_to_position(first_word),
+                       .to = str_to_position(second_word),
+                       .capture = str_to_position(third_word)};
+  strcpy(result.string, string);
+
+  return result;
+}
+
+void make_move(int child_stdin, char *board, bool *turn, move made_move) {
+  char piece = board[made_move.from];
+  board[made_move.from] = ' ';
+  board[made_move.to] = piece;
+
+  if (is_valid(made_move.capture))
+    board[made_move.capture] = ' ';
+
+  *turn = !*turn;
+  dprintf(child_stdin, "makemove %s\n", made_move.string);
+}
+
+move find_move_for_position(move available_moves[4], int position) {
+  // Iterate through all available moves and check if the 'to' or
+  // 'capture' positions matches.
+  for (int i = 0; i < 4; i++) {
+    move move = available_moves[i];
+
+    if (move.to == position || move.capture == position)
+      return move;
+  }
+
+  return (move){.from = POSITION_INV};
+}
 
 int main(int argc, char *argv[]) {
   InitWindow(900, 900, "JazzInSea - Cez GUI");
@@ -137,6 +198,24 @@ int main(int argc, char *argv[]) {
   SetTextureFilter(black_pawn_texture, TEXTURE_FILTER_TRILINEAR);
   SetTextureFilter(black_knight_texture, TEXTURE_FILTER_TRILINEAR);
 
+  // Create a circle texture which can be used to indicate the move target
+  // squares.
+  Texture2D circle_texture;
+  {
+    Image circle_image =
+        GenImageColor(GRID_SQUARE_SIZE * 2, GRID_SQUARE_SIZE * 2, BLANK);
+
+    ImageDrawCircle(&circle_image, GRID_SQUARE_SIZE, GRID_SQUARE_SIZE,
+                    GRID_SQUARE_SIZE * GRID_CIRCLE_RATIO, WHITE);
+
+    circle_texture = LoadTextureFromImage(circle_image);
+
+    GenTextureMipmaps(&circle_texture);
+    SetTextureFilter(circle_texture, TEXTURE_FILTER_TRILINEAR);
+
+    UnloadImage(circle_image);
+  }
+
   // Index 0 will be used for reading, and 1 will be used for writing.
   int child_stdin_pipe[2];
   int child_stdout_pipe[2];
@@ -168,7 +247,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Execute the jazzinsea executable
-    execlp(JIS_EXECUTABLE, JIS_EXECUTABLE, (char *)NULL);
+    execlp(JIS_EXECUTABLE, JIS_EXECUTABLE, "-d%", (char *)NULL);
     fprintf(stderr, "error: execl failed\n");
     perror("execl");
     exit(1);
@@ -190,23 +269,74 @@ int main(int argc, char *argv[]) {
 
   int held_piece = POSITION_INV;
 
-  move available_moves[4];
+  move available_moves[4] = {
+      {POSITION_INV},
+      {POSITION_INV},
+      {POSITION_INV},
+      {POSITION_INV},
+  };
+
+  enum { GUI, AI } players[2] = {AI, GUI};
+  bool asked_for_move = false;
 
   while (!WindowShouldClose()) {
     Vector2 mouse_vec = GetMousePosition();
 
+    if (players[board_turn] == AI) {
+      if (!asked_for_move) {
+        // Ask the AI for a move.
+        dprintf(child_stdin, "evaluate -r\n");
+        asked_for_move = true;
+
+      } else {
+        // Check if AI returned a move.
+        struct pollfd pollfd = {child_stdout, POLLIN};
+
+        int result = poll(&pollfd, 1, 0);
+        if (result < 0) {
+          fprintf(stderr, "error: poll failed\n");
+          perror("poll");
+          return 1;
+
+        } else if (result > 0) {
+          asked_for_move = false;
+
+          // Child returned, make the generated move.
+          char buffer[256];
+          int length = read(child_stdout, buffer, sizeof(buffer) - 1);
+          if (length < 0) {
+            fprintf(stderr, "error: reading from %s failed\n", JIS_EXECUTABLE);
+            perror("read");
+            exit(1);
+          }
+          buffer[length] = '\0';
+          move generated = desc_move_jis(child_stdin, child_stdout, buffer);
+          make_move(child_stdin, board, &board_turn, generated);
+        }
+      }
+    }
+
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
       if (CheckCollisionPointRec(mouse_vec, BOARD_RECT)) {
-        held_piece = POSITION_INV;
         int pressed_position = window_vec_to_id(mouse_vec);
 
-        // Clear all moves.
+        move made_move =
+            find_move_for_position(available_moves, pressed_position);
+
+        // After searching available moves, clear all moves.
         for (int i = 0; i < 4; i++) {
           available_moves[i].from = POSITION_INV;
         }
 
-        if (board[pressed_position] != ' ') {
-          held_piece = pressed_position;
+        held_piece = pressed_position;
+
+        if (is_valid(made_move.from)) {
+          // Make move on board and tell jazzinsea to update its board as well.
+          make_move(child_stdin, board, &board_turn, made_move);
+          held_piece = POSITION_INV;
+
+        } else if (players[board_turn] == GUI &&
+                   board[pressed_position] != ' ') {
 
           char position_str[3];
           get_position_str(held_piece, position_str);
@@ -217,55 +347,44 @@ int main(int argc, char *argv[]) {
 
           // Add available moves.
           int i = 0;
-          char *old = buffer + 2;
-          while (*old != '}') {
-            char *new = strchr(old, ' ');
+          char *current_move_string = buffer + 2;
+          while (*current_move_string != '}') {
+            char *new = strchr(current_move_string, ' ');
             if (!new) {
               fprintf(stderr, "error: invalid moves list from jazzinsea\n");
               return 1;
             }
             *new = '\0';
 
-            // Ask jazzinsea to describe the move.
-            // This will fill the buffer with 'from', 'to' and 'capture'
-            // position strings seperated by spaces.
-            char buffer[256];
-            ask_jis(child_stdin, child_stdout, buffer, sizeof(buffer),
-                    "descmove %s\n", old);
-
-            // Convert into a list of strings separated by \0.
-            char *second_word = strchr(buffer, ' ');
-            if (!second_word) {
-              fprintf(stderr, "error: invalid description of move\n");
-              return 1;
-            }
-            *(second_word++) = '\0';
-
-            char *third_word = strchr(second_word + 1, ' ');
-            if (!second_word) {
-              fprintf(stderr, "error: invalid description of move\n");
-              return 1;
-            }
-            *(third_word++) = '\0';
-
             // There can not be more than 4 moves.
             assert(i < 4);
 
-            // Every move must originate from the held piece/
-            int from_position = str_to_position(buffer);
-            assert(from_position == held_piece);
+            // Ask jazzinsea to describe the move.
+            // Every move must originate from the held piece.
+            move result =
+                desc_move_jis(child_stdin, child_stdout, current_move_string);
+            assert(result.from == held_piece);
+            available_moves[i++] = result;
 
-            available_moves[i++] =
-                (move){.from = from_position,
-                       .to = str_to_position(second_word),
-                       .capture = str_to_position(third_word)};
-
-            old = new + 1;
+            current_move_string = new + 1;
           }
         }
       }
     } else if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
       held_piece = POSITION_INV;
+      int pressed_position = window_vec_to_id(mouse_vec);
+
+      move made_move =
+          find_move_for_position(available_moves, pressed_position);
+
+      if (is_valid(made_move.from)) {
+        for (int i = 0; i < 4; i++) {
+          available_moves[i].from = POSITION_INV;
+        }
+
+        // Make move on board and tell jazzinsea to update its board as well.
+        make_move(child_stdin, board, &board_turn, made_move);
+      }
     }
 
     BeginDrawing();
@@ -274,17 +393,6 @@ int main(int argc, char *argv[]) {
     DrawTextureRec(grid_texture,
                    (Rectangle){0, 0, grid_texture.width, grid_texture.height},
                    (Vector2){BOARD_RECT.x, BOARD_RECT.y}, WHITE);
-
-    // Draw indicators to available squares.
-    for (int i = 0; i < 4; i++) {
-      move move = available_moves[i];
-
-      if (!is_valid(move.from))
-        continue;
-
-      DrawCircleV(pos_to_window_vec_center(move.to), GRID_CIRCLE_RADIUS,
-                  GRID_TO_COLOR);
-    }
 
     if (held_piece >= 0) {
       DrawRectangleRec(pos_to_window_rect(held_piece), GRID_HELD_COLOR);
@@ -325,6 +433,26 @@ int main(int argc, char *argv[]) {
                      (Vector2){0, 0}, 0, WHITE);
     }
 
+    // Draw indicators to available squares.
+    for (int i = 0; i < 4; i++) {
+      move move = available_moves[i];
+
+      if (!is_valid(move.from))
+        continue;
+
+      DrawTexturePro(
+          circle_texture,
+          (Rectangle){0, 0, circle_texture.width, circle_texture.height},
+          pos_to_window_rect(move.to), (Vector2){0, 0}, 0, GRID_TO_COLOR);
+
+      if (is_valid(move.capture))
+        DrawTexturePro(
+            circle_texture,
+            (Rectangle){0, 0, circle_texture.width, circle_texture.height},
+            pos_to_window_rect(move.capture), (Vector2){0, 0}, 0,
+            GRID_CAPTURE_COLOR);
+    }
+
     EndDrawing();
   }
 
@@ -334,5 +462,6 @@ int main(int argc, char *argv[]) {
   UnloadTexture(white_knight_texture);
   UnloadTexture(black_pawn_texture);
   UnloadTexture(black_knight_texture);
+  UnloadTexture(circle_texture);
   CloseWindow();
 }
