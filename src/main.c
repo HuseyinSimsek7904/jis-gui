@@ -87,6 +87,11 @@ int main(int argc, char *argv[]) {
   Texture2D black_pawn_texture = LoadTexture("assets/bP.png");
   Texture2D black_knight_texture = LoadTexture("assets/bN.png");
 
+  GenTextureMipmaps(&white_pawn_texture);
+  GenTextureMipmaps(&white_knight_texture);
+  GenTextureMipmaps(&black_pawn_texture);
+  GenTextureMipmaps(&black_knight_texture);
+
   SetTextureFilter(white_pawn_texture, TEXTURE_FILTER_TRILINEAR);
   SetTextureFilter(white_knight_texture, TEXTURE_FILTER_TRILINEAR);
   SetTextureFilter(black_pawn_texture, TEXTURE_FILTER_TRILINEAR);
