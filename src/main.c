@@ -14,6 +14,9 @@ You should have received a copy of the GNU General Public License along with
 jis-gui. If not, see <https://www.gnu.org/licenses/>.
 */
 
+#include "fen.h"
+#include "position.h"
+
 #include <raylib.h>
 
 #include <stdbool.h>
@@ -27,17 +30,6 @@ const Color GRID_BLACK_COLOR = (Color){0xa0, 0xa0, 0xa0, 0xff};
 const Color GRID_HELD_COLOR = (Color){0xcc, 0xaa, 0x22, 0x80};
 
 const Vector2 BOARD_VECTOR = (Vector2){50, 50};
-
-// A position out of the bounds [0, 63] is an invalid position.
-static inline int to_position(int row, int col) { return (row << 3) + col; }
-
-static inline bool is_valid(int position) {
-  return position >= 0 && position < 64;
-}
-static inline int to_row(int position) { return position >> 3; }
-static inline int to_col(int position) { return position & 7; }
-
-#define POSITION_INV -1
 
 Vector2 pos_to_window_vec(int pos) {
   return (Vector2){to_col(pos) * SQUARE_SIZE + BOARD_VECTOR.x,
@@ -97,14 +89,12 @@ int main(int argc, char *argv[]) {
   SetTextureFilter(black_pawn_texture, TEXTURE_FILTER_TRILINEAR);
   SetTextureFilter(black_knight_texture, TEXTURE_FILTER_TRILINEAR);
 
-  char board[64] = {"np    PN"
-                    "pp    PP"
-                    "        "
-                    "        "
-                    "        "
-                    "        "
-                    "PP    pp"
-                    "NP    pn"};
+  char board[64];
+  bool board_turn;
+  if (!load_fen("np4PN/pp4PP/8/8/8/8/PP4pp/NP4pn w", board, &board_turn)) {
+    fprintf(stderr, "error: could not load board FEN from string\n");
+    return 1;
+  }
 
   int held_piece = POSITION_INV;
 
