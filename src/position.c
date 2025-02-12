@@ -14,22 +14,10 @@ You should have received a copy of the GNU General Public License along with
 jis-gui. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#ifndef POSITION_H
-#define POSITION_H
+#include "position.h"
 
-#include <stdbool.h>
-
-// An integer value out of the bounds [0, 63] is an invalid position.
-static inline int to_position(int row, int col) { return (row << 3) + col; }
-
-static inline bool is_valid(int position) {
-  return position >= 0 && position < 64;
+void get_position_str(int position, char buffer[3]) {
+  buffer[0] = 'a' + to_col(position);
+  buffer[1] = '1' + to_row(position);
+  buffer[2] = '\0';
 }
-static inline int to_row(int position) { return position >> 3; }
-static inline int to_col(int position) { return position & 7; }
-
-#define POSITION_INV -1
-
-void get_position_str(int position, char buffer[3]);
-
-#endif
