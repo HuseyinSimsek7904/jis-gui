@@ -57,6 +57,11 @@ int main(int argc, char *argv[]) {
   {
     Color *pixel_data = malloc(64 * SQUARE_SIZE * SQUARE_SIZE * sizeof(Color));
 
+    if (!pixel_data) {
+      fprintf(stderr, "error: malloc failed\n");
+      return 1;
+    }
+
     // I do not believe that's the best way to do this.
     // Rows are flipped since the topmost row is the 0th row.
     for (int row = 0; row < 8 * SQUARE_SIZE; row++) {
