@@ -29,22 +29,23 @@ const Color GRID_WHITE_COLOR = (Color){0xf0, 0xf0, 0xf0, 0xff};
 const Color GRID_BLACK_COLOR = (Color){0xa0, 0xa0, 0xa0, 0xff};
 const Color GRID_HELD_COLOR = (Color){0xcc, 0xaa, 0x22, 0x80};
 
-const Vector2 BOARD_VECTOR = (Vector2){50, 50};
+const Rectangle BOARD_RECT =
+    (Rectangle){50, 50, 8 * SQUARE_SIZE, 8 * SQUARE_SIZE};
 
 Vector2 pos_to_window_vec(int pos) {
-  return (Vector2){to_col(pos) * SQUARE_SIZE + BOARD_VECTOR.x,
-                   (7 - to_row(pos)) * SQUARE_SIZE + BOARD_VECTOR.y};
+  return (Vector2){to_col(pos) * SQUARE_SIZE + BOARD_RECT.x,
+                   (7 - to_row(pos)) * SQUARE_SIZE + BOARD_RECT.y};
 }
 
 Rectangle pos_to_window_rect(int pos) {
-  return (Rectangle){to_col(pos) * SQUARE_SIZE + BOARD_VECTOR.x,
-                     (7 - to_row(pos)) * SQUARE_SIZE + BOARD_VECTOR.y,
+  return (Rectangle){to_col(pos) * SQUARE_SIZE + BOARD_RECT.x,
+                     (7 - to_row(pos)) * SQUARE_SIZE + BOARD_RECT.y,
                      SQUARE_SIZE, SQUARE_SIZE};
 }
 
 int window_vec_to_id(Vector2 vec) {
-  return ((int)((vec.x - BOARD_VECTOR.x) / SQUARE_SIZE) +
-          (7 - (int)((vec.y - BOARD_VECTOR.y) / SQUARE_SIZE)) * 8);
+  return ((int)((vec.x - BOARD_RECT.x) / SQUARE_SIZE) +
+          (7 - (int)((vec.y - BOARD_RECT.y) / SQUARE_SIZE)) * 8);
 }
 
 int main(int argc, char *argv[]) {
@@ -104,8 +105,12 @@ int main(int argc, char *argv[]) {
   int held_piece = POSITION_INV;
 
   while (!WindowShouldClose()) {
+    Vector2 mouse_vec = GetMousePosition();
+
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-      held_piece = window_vec_to_id(GetMousePosition());
+      if (CheckCollisionPointRec(mouse_vec, BOARD_RECT)) {
+        held_piece = window_vec_to_id(mouse_vec);
+      }
     } else if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
       held_piece = POSITION_INV;
     }
@@ -113,7 +118,7 @@ int main(int argc, char *argv[]) {
     BeginDrawing();
     DrawTextureRec(grid_texture,
                    (Rectangle){0, 0, grid_texture.width, grid_texture.height},
-                   BOARD_VECTOR, WHITE);
+                   (Vector2){BOARD_RECT.x, BOARD_RECT.y}, WHITE);
 
     if (held_piece >= 0) {
       DrawRectangleRec(pos_to_window_rect(held_piece), GRID_HELD_COLOR);
@@ -141,8 +146,8 @@ int main(int argc, char *argv[]) {
 
       Rectangle rect;
       if (position == held_piece) {
-        int x = GetMouseX() - SQUARE_SIZE / 2;
-        int y = GetMouseY() - SQUARE_SIZE / 2;
+        int x = (int)(mouse_vec.x) - SQUARE_SIZE / 2;
+        int y = (int)(mouse_vec.y) - SQUARE_SIZE / 2;
         rect = (Rectangle){x, y, SQUARE_SIZE, SQUARE_SIZE};
       } else {
         rect = pos_to_window_rect(position);
