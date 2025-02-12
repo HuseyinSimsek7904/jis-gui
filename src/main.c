@@ -23,6 +23,7 @@ jis-gui. If not, see <https://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 const int SQUARE_SIZE = 100;
 const Color BACKGROUND_COLOR = (Color){0x20, 0x20, 0x20, 0xff};
@@ -49,6 +50,8 @@ int window_vec_to_id(Vector2 vec) {
           (7 - (int)((vec.y - BOARD_RECT.y) / SQUARE_SIZE)) * 8);
 }
 
+const char *JIS_EXECUTABLE = "jazzinsea";
+
 int main(int argc, char *argv[]) {
   InitWindow(900, 900, "JazzInSea - Cez GUI");
 
@@ -61,6 +64,7 @@ int main(int argc, char *argv[]) {
 
     if (!pixel_data) {
       fprintf(stderr, "error: malloc failed\n");
+      perror("malloc");
       return 1;
     }
 
@@ -95,6 +99,33 @@ int main(int argc, char *argv[]) {
   SetTextureFilter(white_knight_texture, TEXTURE_FILTER_TRILINEAR);
   SetTextureFilter(black_pawn_texture, TEXTURE_FILTER_TRILINEAR);
   SetTextureFilter(black_knight_texture, TEXTURE_FILTER_TRILINEAR);
+
+  int child_stdin[2];
+  int child_stdout[2];
+
+  if (pipe(child_stdin) < 0 || pipe(child_stdout) < 0) {
+    fprintf(stderr, "error: pipe failed\n");
+    perror("pipe");
+    return 1;
+  }
+
+  int pid = fork();
+
+  if (pid < 0) {
+    fprintf(stderr, "error: fork failed\n");
+    perror("fork");
+    return 1;
+  }
+
+  if (pid == 0) {
+    // The child process, execute the jazzinsea executable
+    execlp(JIS_EXECUTABLE, JIS_EXECUTABLE, "-ns", (char *)NULL);
+    fprintf(stderr, "error: execl failed\n");
+    perror("execl");
+    exit(1);
+  }
+
+  // The parent process:
 
   char board[64];
   bool board_turn;
