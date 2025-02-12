@@ -32,4 +32,6 @@ static inline int to_col(int position) { return position & 7; }
 
 void get_position_str(int position, char buffer[3]);
 
+int str_to_position(char *buffer);
+
 #endif

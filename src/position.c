@@ -21,3 +21,10 @@ void get_position_str(int position, char buffer[3]) {
   buffer[1] = '1' + to_row(position);
   buffer[2] = '\0';
 }
+
+int str_to_position(char *buffer) {
+  if (buffer[0] < 'a' || buffer[0] > 'h' || buffer[1] < '1' || buffer[1] > '8')
+    return POSITION_INV;
+
+  return to_position(buffer[1] - '1', buffer[0] - 'a');
+}
