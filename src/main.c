@@ -123,16 +123,11 @@ move desc_move_jis(int child_stdin, int child_stdout, char *string) {
   return result;
 }
 
-void make_move(int child_stdin, char *board, bool *turn, move made_move) {
-  char piece = board[made_move.from];
-  board[made_move.from] = ' ';
-  board[made_move.to] = piece;
-
-  if (is_valid(made_move.capture))
-    board[made_move.capture] = ' ';
-
-  *turn = !*turn;
-  dprintf(child_stdin, "makemove %s\n", made_move.string);
+void make_move_jis(int child_stdin, int child_stdout, char *board, bool *board_turn, char *move_string) {
+  char buffer[256];
+  dprintf(child_stdin, "makemove %s\n", move_string);
+  ask_jis(child_stdin, child_stdout, buffer, sizeof(buffer), "savefen\n");
+  load_fen(buffer, board, board_turn);
 }
 
 move find_move_for_position(move available_moves[4], int position) {
@@ -302,16 +297,16 @@ int main(int argc, char *argv[]) {
           asked_for_move = false;
 
           // Child returned, make the generated move.
-          char buffer[256];
-          int length = read(child_stdout, buffer, sizeof(buffer) - 1);
+          char move_string[8];
+          int length = read(child_stdout, move_string, sizeof(move_string) - 1);
           if (length < 0) {
             fprintf(stderr, "error: reading from %s failed\n", JIS_EXECUTABLE);
             perror("read");
             exit(1);
           }
-          buffer[length] = '\0';
-          move generated = desc_move_jis(child_stdin, child_stdout, buffer);
-          make_move(child_stdin, board, &board_turn, generated);
+          move_string[length] = '\0';
+
+          make_move_jis(child_stdin, child_stdout, board, &board_turn, move_string);
         }
       }
     }
@@ -332,7 +327,7 @@ int main(int argc, char *argv[]) {
 
         if (is_valid(made_move.from)) {
           // Make move on board and tell jazzinsea to update its board as well.
-          make_move(child_stdin, board, &board_turn, made_move);
+          make_move_jis(child_stdin, child_stdout, board, &board_turn, made_move.string);
           held_piece = POSITION_INV;
 
         } else if (players[board_turn] == GUI &&
@@ -383,7 +378,7 @@ int main(int argc, char *argv[]) {
         }
 
         // Make move on board and tell jazzinsea to update its board as well.
-        make_move(child_stdin, board, &board_turn, made_move);
+        make_move_jis(child_stdin, child_stdout, board, &board_turn, made_move.string);
       }
     }
 
