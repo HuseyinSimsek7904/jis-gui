@@ -39,12 +39,17 @@ const Color BACKGROUND_COLOR = (Color){0x20, 0x20, 0x20, 0xff};
 const Color GRID_WHITE_COLOR = (Color){0xf0, 0xf0, 0xf0, 0xff};
 const Color GRID_BLACK_COLOR = (Color){0xa0, 0xa0, 0xa0, 0xff};
 const Color GRID_HELD_COLOR = (Color){0xcc, 0xaa, 0x22, 0x80};
-const Color GRID_TO_COLOR = (Color){0x55, 0x55, 0x55, 0x80};
-const Color GRID_CAPTURE_COLOR = (Color){0xff, 0x00, 0x00, 0x80};
 
-const Rectangle HISTORY_RECT = (Rectangle){900, 50, 200, 200};
+const Color CIRCLE_TO_COLOR = (Color){0x55, 0x55, 0x55, 0x80};
+const Color CIRCLE_CAPTURE_COLOR = (Color){0xff, 0x00, 0x00, 0x80};
+
+const Color LAST_MOVE_FROM_COLOR = (Color){0x66, 0xff, 0xff, 0x80};
+const Color LAST_MOVE_TO_COLOR = (Color){0x66, 0xff, 0xff, 0x60};
+
+const Rectangle HISTORY_RECT = (Rectangle){900, 80, 200, 200};
 const Rectangle BOARD_RECT =
     (Rectangle){50, 50, 8 * GRID_SQUARE_SIZE, 8 * GRID_SQUARE_SIZE};
+
 const int WINDOW_WIDTH = 1150;
 const int WINDOW_HEIGHT = 900;
 
@@ -173,6 +178,7 @@ int main(int argc, char *argv[]) {
       {POSITION_INV},
       {POSITION_INV},
   };
+  move last_move = {POSITION_INV};
 
   enum { GUI, AI } players[2] = {AI, GUI};
   bool asked_for_move = false;
@@ -202,8 +208,8 @@ int main(int argc, char *argv[]) {
             return 1;
           }
 
-          jis_make_move(process, board, &board_turn, &board_status,
-                        move_string);
+          jis_make_move(process, board, &board_turn, &board_status, move_string,
+                        &last_move);
 
           // If there is a selected piece, generated moves for it.
           if (is_valid(selected_piece)) {
@@ -230,7 +236,7 @@ int main(int argc, char *argv[]) {
         if (is_valid(made_move.from)) {
           // Make move on board and tell jazzinsea to update its board as well.
           jis_make_move(process, board, &board_turn, &board_status,
-                        made_move.string);
+                        made_move.string, &last_move);
           selected_piece = POSITION_INV;
 
         } else if (players[board_turn] == GUI &&
@@ -284,7 +290,7 @@ int main(int argc, char *argv[]) {
 
           // Make move on board and tell jazzinsea to update its board as well.
           jis_make_move(process, board, &board_turn, &board_status,
-                        made_move.string);
+                        made_move.string, &last_move);
         }
       }
     }
@@ -297,8 +303,14 @@ int main(int argc, char *argv[]) {
                    (Rectangle){0, 0, grid_texture.width, grid_texture.height},
                    (Vector2){BOARD_RECT.x, BOARD_RECT.y}, WHITE);
 
-    if (selected_piece >= 0) {
+    if (is_valid(selected_piece) && selected_piece != last_move.to) {
       DrawRectangleRec(pos_to_window_rect(selected_piece), GRID_HELD_COLOR);
+    }
+
+    if (is_valid(last_move.from)) {
+      DrawRectangleRec(pos_to_window_rect(last_move.from),
+                       LAST_MOVE_FROM_COLOR);
+      DrawRectangleRec(pos_to_window_rect(last_move.to), LAST_MOVE_TO_COLOR);
     }
 
     // Rows are inverted, unlike how jazz-in-sea represents them.
@@ -346,14 +358,14 @@ int main(int argc, char *argv[]) {
       DrawTexturePro(
           circle_texture,
           (Rectangle){0, 0, circle_texture.width, circle_texture.height},
-          pos_to_window_rect(move.to), (Vector2){0, 0}, 0, GRID_TO_COLOR);
+          pos_to_window_rect(move.to), (Vector2){0, 0}, 0, CIRCLE_TO_COLOR);
 
       if (is_valid(move.capture))
         DrawTexturePro(
             circle_texture,
             (Rectangle){0, 0, circle_texture.width, circle_texture.height},
             pos_to_window_rect(move.capture), (Vector2){0, 0}, 0,
-            GRID_CAPTURE_COLOR);
+            CIRCLE_CAPTURE_COLOR);
     }
 
     // Draw status text.

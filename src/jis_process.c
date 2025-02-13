@@ -145,8 +145,9 @@ bool jis_copy_position(jis_process process, char *board, bool *board_turn,
 }
 
 bool jis_make_move(jis_process process, char *board, bool *board_turn,
-                   int *board_status, char *move_string) {
+                   int *board_status, char *move_string, move *last_move) {
   dprintf(process.child_stdin, "makemove %s\n", move_string);
+  *last_move = jis_desc_move(process, move_string);
   return jis_copy_position(process, board, board_turn, board_status);
 }
 

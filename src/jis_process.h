@@ -52,7 +52,7 @@ bool jis_copy_position(jis_process process, char *board, bool *board_turn,
 
 // Ask process to make a move and copy the new board position.
 bool jis_make_move(jis_process process, char *board, bool *board_turn,
-                   int *board_status, char *move_string);
+                   int *board_status, char *move_string, move *last_move);
 
 // Start a random evaluation on the process.
 void jis_start_eval_r(jis_process process);
