@@ -165,7 +165,7 @@ int main(int argc, char *argv[]) {
   jis_copy_position(process, board, &board_turn);
 
   // The user interface states.
-  int held_piece = POSITION_INV;
+  int selected_piece = POSITION_INV;
   move available_moves[4] = {
       {POSITION_INV},
       {POSITION_INV},
@@ -202,6 +202,11 @@ int main(int argc, char *argv[]) {
           }
 
           jis_make_move(process, board, &board_turn, move_string);
+
+          // If there is a selected piece, generated moves for it.
+          if (is_valid(selected_piece)) {
+            jis_ask_avail_moves(process, selected_piece, available_moves);
+          }
         }
       }
     }
@@ -218,18 +223,18 @@ int main(int argc, char *argv[]) {
           available_moves[i].from = POSITION_INV;
         }
 
-        held_piece = pressed_position;
+        selected_piece = pressed_position;
 
         if (is_valid(made_move.from)) {
           // Make move on board and tell jazzinsea to update its board as well.
           jis_make_move(process, board, &board_turn, made_move.string);
-          held_piece = POSITION_INV;
+          selected_piece = POSITION_INV;
 
         } else if (players[board_turn] == GUI &&
                    board[pressed_position] != ' ') {
 
           char position_str[3];
-          get_position_str(held_piece, position_str);
+          get_position_str(selected_piece, position_str);
 
           char buffer[256];
           jis_ask(process, buffer, sizeof(buffer), "allmoves %s\n",
@@ -252,7 +257,7 @@ int main(int argc, char *argv[]) {
             // Ask jazzinsea to describe the move.
             // Every move must originate from the held piece.
             move result = jis_desc_move(process, current_move_string);
-            assert(result.from == held_piece);
+            assert(result.from == selected_piece);
             available_moves[i++] = result;
 
             current_move_string = new + 1;
@@ -260,22 +265,25 @@ int main(int argc, char *argv[]) {
         }
       }
     } else if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
-      held_piece = POSITION_INV;
-      int pressed_position = window_vec_to_id(mouse_vec);
+      if (board[selected_piece] == ' ') {
+        selected_piece = POSITION_INV;
 
-      move made_move =
-          find_move_for_position(available_moves, pressed_position);
+      } else {
+        int pressed_position = window_vec_to_id(mouse_vec);
+        move made_move =
+            find_move_for_position(available_moves, pressed_position);
 
-      if (is_valid(made_move.from)) {
-        for (int i = 0; i < 4; i++) {
-          available_moves[i].from = POSITION_INV;
+        if (is_valid(made_move.from)) {
+          selected_piece = POSITION_INV;
+          for (int i = 0; i < 4; i++) {
+            available_moves[i].from = POSITION_INV;
+          }
+
+          // Make move on board and tell jazzinsea to update its board as well.
+          jis_make_move(process, board, &board_turn, made_move.string);
         }
-
-        // Make move on board and tell jazzinsea to update its board as well.
-        jis_make_move(process, board, &board_turn, made_move.string);
       }
     }
-
     BeginDrawing();
     ClearBackground(BACKGROUND_COLOR);
 
@@ -283,8 +291,8 @@ int main(int argc, char *argv[]) {
                    (Rectangle){0, 0, grid_texture.width, grid_texture.height},
                    (Vector2){BOARD_RECT.x, BOARD_RECT.y}, WHITE);
 
-    if (held_piece >= 0) {
-      DrawRectangleRec(pos_to_window_rect(held_piece), GRID_HELD_COLOR);
+    if (selected_piece >= 0) {
+      DrawRectangleRec(pos_to_window_rect(selected_piece), GRID_HELD_COLOR);
     }
 
     // Rows are inverted, unlike how jazz-in-sea represents them.
@@ -308,7 +316,7 @@ int main(int argc, char *argv[]) {
       }
 
       Rectangle rect;
-      if (position == held_piece) {
+      if (position == selected_piece && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
         int x = (int)(mouse_vec.x) - GRID_SQUARE_SIZE / 2;
         int y = (int)(mouse_vec.y) - GRID_SQUARE_SIZE / 2;
         rect = (Rectangle){x, y, GRID_SQUARE_SIZE, GRID_SQUARE_SIZE};
