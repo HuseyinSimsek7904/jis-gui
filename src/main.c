@@ -162,7 +162,8 @@ int main(int argc, char *argv[]) {
   // Copy the board position from the process.
   char board[64];
   bool board_turn;
-  jis_copy_position(process, board, &board_turn);
+  int board_status;
+  jis_copy_position(process, board, &board_turn, &board_status);
 
   // The user interface states.
   int selected_piece = POSITION_INV;
@@ -201,7 +202,8 @@ int main(int argc, char *argv[]) {
             return 1;
           }
 
-          jis_make_move(process, board, &board_turn, move_string);
+          jis_make_move(process, board, &board_turn, &board_status,
+                        move_string);
 
           // If there is a selected piece, generated moves for it.
           if (is_valid(selected_piece)) {
@@ -227,7 +229,8 @@ int main(int argc, char *argv[]) {
 
         if (is_valid(made_move.from)) {
           // Make move on board and tell jazzinsea to update its board as well.
-          jis_make_move(process, board, &board_turn, made_move.string);
+          jis_make_move(process, board, &board_turn, &board_status,
+                        made_move.string);
           selected_piece = POSITION_INV;
 
         } else if (players[board_turn] == GUI &&
@@ -280,10 +283,13 @@ int main(int argc, char *argv[]) {
           }
 
           // Make move on board and tell jazzinsea to update its board as well.
-          jis_make_move(process, board, &board_turn, made_move.string);
+          jis_make_move(process, board, &board_turn, &board_status,
+                        made_move.string);
         }
       }
     }
+
+    // Board graphics
     BeginDrawing();
     ClearBackground(BACKGROUND_COLOR);
 
@@ -349,6 +355,27 @@ int main(int argc, char *argv[]) {
             pos_to_window_rect(move.capture), (Vector2){0, 0}, 0,
             GRID_CAPTURE_COLOR);
     }
+
+    // Draw status text.
+    const char *status_text = "<invalid>";
+    switch (board_status >> 4) {
+    case 0:
+      if (board_turn)
+        status_text = "White to play";
+      else
+        status_text = "Black to play";
+      break;
+    case 1:
+      status_text = "Draw";
+      break;
+    case 2:
+      status_text = "White wins";
+      break;
+    case 3:
+      status_text = "Black wins";
+      break;
+    }
+    DrawText(status_text, 900, 50, 30, WHITE);
 
     EndDrawing();
   }

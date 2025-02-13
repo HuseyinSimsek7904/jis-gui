@@ -47,11 +47,12 @@ int jis_ask(jis_process process, char *buffer, size_t buffer_size,
 move jis_desc_move(jis_process process, char *string);
 
 // Ask process for the board position and copy it to GUI board.
-void jis_copy_position(jis_process process, char *board, bool *board_turn);
+bool jis_copy_position(jis_process process, char *board, bool *board_turn,
+                       int *board_status);
 
 // Ask process to make a move and copy the new board position.
-void jis_make_move(jis_process process, char *board, bool *board_turn,
-                   char *move_string);
+bool jis_make_move(jis_process process, char *board, bool *board_turn,
+                   int *board_status, char *move_string);
 
 // Start a random evaluation on the process.
 void jis_start_eval_r(jis_process process);
@@ -60,6 +61,7 @@ void jis_start_eval_r(jis_process process);
 int jis_poll(jis_process process);
 
 // Ask the process the available moves originating from position.
-bool jis_ask_avail_moves(jis_process process, int from_position, move available_moves[4]);
+bool jis_ask_avail_moves(jis_process process, int from_position,
+                         move available_moves[4]);
 
 #endif

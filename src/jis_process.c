@@ -128,16 +128,26 @@ move jis_desc_move(jis_process process, char *string) {
   return result;
 }
 
-void jis_copy_position(jis_process process, char *board, bool *board_turn) {
+bool jis_copy_position(jis_process process, char *board, bool *board_turn,
+                       int *board_status) {
   char buffer[256];
-  jis_ask(process, buffer, sizeof(buffer), "savefen\n");
+  int length = jis_ask(process, buffer, sizeof(buffer), "savefen\n");
+  if (length < 0)
+    return false;
+
   load_fen(buffer, board, board_turn);
+  length = jis_ask(process, buffer, sizeof(buffer), "status -i\n");
+  if (length < 0)
+    return false;
+
+  *board_status = strtol(buffer, NULL, 10);
+  return true;
 }
 
-void jis_make_move(jis_process process, char *board, bool *board_turn,
-                   char *move_string) {
+bool jis_make_move(jis_process process, char *board, bool *board_turn,
+                   int *board_status, char *move_string) {
   dprintf(process.child_stdin, "makemove %s\n", move_string);
-  jis_copy_position(process, board, board_turn);
+  return jis_copy_position(process, board, board_turn, board_status);
 }
 
 void jis_start_eval_r(jis_process process) {
@@ -155,7 +165,8 @@ int jis_poll(jis_process process) {
   return result;
 }
 
-bool jis_ask_avail_moves(jis_process process, int from_position, move available_moves[4]) {
+bool jis_ask_avail_moves(jis_process process, int from_position,
+                         move available_moves[4]) {
   char position_str[3];
   get_position_str(from_position, position_str);
 
@@ -168,7 +179,8 @@ bool jis_ask_avail_moves(jis_process process, int from_position, move available_
   while (*current_move_string != '}') {
     char *new = strchr(current_move_string, ' ');
     if (!new) {
-      fprintf(stderr, "error: invalid moves list from %s\n", process.child_executable);
+      fprintf(stderr, "error: invalid moves list from %s\n",
+              process.child_executable);
       return false;
     }
     *new = '\0';
