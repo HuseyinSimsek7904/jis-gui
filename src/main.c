@@ -15,6 +15,7 @@ jis-gui. If not, see <https://www.gnu.org/licenses/>.
 */
 
 #include "fen.h"
+#include "jis_process.h"
 #include "position.h"
 
 #include <raylib.h>
@@ -41,8 +42,11 @@ const Color GRID_HELD_COLOR = (Color){0xcc, 0xaa, 0x22, 0x80};
 const Color GRID_TO_COLOR = (Color){0x55, 0x55, 0x55, 0x80};
 const Color GRID_CAPTURE_COLOR = (Color){0xff, 0x00, 0x00, 0x80};
 
+const Rectangle HISTORY_RECT = (Rectangle){900, 50, 200, 200};
 const Rectangle BOARD_RECT =
     (Rectangle){50, 50, 8 * GRID_SQUARE_SIZE, 8 * GRID_SQUARE_SIZE};
+const int WINDOW_WIDTH = 1150;
+const int WINDOW_HEIGHT = 900;
 
 Vector2 pos_to_window_vec(int pos) {
   return (Vector2){to_col(pos) * GRID_SQUARE_SIZE + BOARD_RECT.x,
@@ -68,68 +72,6 @@ int window_vec_to_id(Vector2 vec) {
 
 const char *JIS_EXECUTABLE = "jazzinsea";
 
-typedef struct {
-  int from;
-  int to;
-  int capture;
-  char string[5];
-} move;
-
-void ask_jis(int child_stdin, int child_stdout, char *buffer,
-             size_t buffer_size, const char *format, ...) {
-  va_list args;
-  va_start(args, format);
-
-  vdprintf(child_stdin, format, args);
-
-  int length = read(child_stdout, buffer, buffer_size - 1);
-  if (length < 0) {
-    fprintf(stderr, "error: reading from %s failed\n", JIS_EXECUTABLE);
-    perror("read");
-    exit(1);
-  }
-  buffer[length] = '\0';
-}
-
-move desc_move_jis(int child_stdin, int child_stdout, char *string) {
-  // Ask jazzinsea to describe a move.
-  // This will fill the buffer with 'from', 'to' and 'capture'
-  // position strings seperated by spaces.
-  char first_word[256];
-  ask_jis(child_stdin, child_stdout, first_word, sizeof(first_word),
-          "descmove %s\n", string);
-
-  // Convert into a list of strings separated by \0.
-  char *second_word = strchr(first_word, ' ');
-  if (!second_word) {
-    fprintf(stderr, "error: invalid description of move\n");
-    return (move){.from = POSITION_INV};
-  }
-  *(second_word++) = '\0';
-
-  char *third_word = strchr(second_word + 1, ' ');
-  if (!second_word) {
-    fprintf(stderr, "error: invalid description of move\n");
-    return (move){.from = POSITION_INV};
-  }
-  *(third_word++) = '\0';
-
-  // Create the move object.
-  move result = (move){.from = str_to_position(first_word),
-                       .to = str_to_position(second_word),
-                       .capture = str_to_position(third_word)};
-  strcpy(result.string, string);
-
-  return result;
-}
-
-void make_move_jis(int child_stdin, int child_stdout, char *board, bool *board_turn, char *move_string) {
-  char buffer[256];
-  dprintf(child_stdin, "makemove %s\n", move_string);
-  ask_jis(child_stdin, child_stdout, buffer, sizeof(buffer), "savefen\n");
-  load_fen(buffer, board, board_turn);
-}
-
 move find_move_for_position(move available_moves[4], int position) {
   // Iterate through all available moves and check if the 'to' or
   // 'capture' positions matches.
@@ -144,7 +86,7 @@ move find_move_for_position(move available_moves[4], int position) {
 }
 
 int main(int argc, char *argv[]) {
-  InitWindow(900, 900, "JazzInSea - Cez GUI");
+  InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "JazzInSea - Cez GUI");
 
   SetTargetFPS(60);
 
@@ -211,59 +153,19 @@ int main(int argc, char *argv[]) {
     UnloadImage(circle_image);
   }
 
-  // Index 0 will be used for reading, and 1 will be used for writing.
-  int child_stdin_pipe[2];
-  int child_stdout_pipe[2];
-
-  if (pipe(child_stdin_pipe) < 0 || pipe(child_stdout_pipe) < 0) {
-    fprintf(stderr, "error: pipe failed\n");
-    perror("pipe");
+  // Try to create a JazzInSea process.
+  jis_process process = {.child_executable = JIS_EXECUTABLE};
+  if (!jis_create_proc(&process)) {
     return 1;
   }
 
-  int pid = fork();
-
-  if (pid < 0) {
-    fprintf(stderr, "error: fork failed\n");
-    perror("fork");
-    return 1;
-  }
-
-  if (pid == 0) {
-    // The child process, close unused ends of pipe.
-    close(child_stdin_pipe[1]);
-    close(child_stdout_pipe[0]);
-
-    if (dup2(child_stdin_pipe[0], fileno(stdin)) < 0 ||
-        dup2(child_stdout_pipe[1], fileno(stdout)) < 0) {
-      fprintf(stderr, "error: dup2 on child failed\n");
-      perror("dup2");
-      exit(1);
-    }
-
-    // Execute the jazzinsea executable
-    execlp(JIS_EXECUTABLE, JIS_EXECUTABLE, "-d%", (char *)NULL);
-    fprintf(stderr, "error: execl failed\n");
-    perror("execl");
-    exit(1);
-  }
-
-  // The parent process, close unused ends of pipe.
-  close(child_stdin_pipe[0]);
-  close(child_stdout_pipe[1]);
-
-  int child_stdin = child_stdin_pipe[1];
-  int child_stdout = child_stdout_pipe[0];
-
+  // Copy the board position from the process.
   char board[64];
   bool board_turn;
-  if (!load_fen("np4PN/pp4PP/8/8/8/8/PP4pp/NP4pn w", board, &board_turn)) {
-    fprintf(stderr, "error: could not load board FEN from string\n");
-    return 1;
-  }
+  jis_copy_position(process, board, &board_turn);
 
+  // The user interface states.
   int held_piece = POSITION_INV;
-
   move available_moves[4] = {
       {POSITION_INV},
       {POSITION_INV},
@@ -280,33 +182,26 @@ int main(int argc, char *argv[]) {
     if (players[board_turn] == AI) {
       if (!asked_for_move) {
         // Ask the AI for a move.
-        dprintf(child_stdin, "evaluate -r\n");
+        jis_start_eval_r(process);
         asked_for_move = true;
 
       } else {
         // Check if AI returned a move.
-        struct pollfd pollfd = {child_stdout, POLLIN};
+        int result = jis_poll(process);
 
-        int result = poll(&pollfd, 1, 0);
-        if (result < 0) {
-          fprintf(stderr, "error: poll failed\n");
-          perror("poll");
+        if (result < 0)
           return 1;
 
-        } else if (result > 0) {
+        if (result > 0) {
           asked_for_move = false;
 
           // Child returned, make the generated move.
           char move_string[8];
-          int length = read(child_stdout, move_string, sizeof(move_string) - 1);
-          if (length < 0) {
-            fprintf(stderr, "error: reading from %s failed\n", JIS_EXECUTABLE);
-            perror("read");
-            exit(1);
+          if (jis_read(process, move_string, sizeof(move_string)) < 0) {
+            return 1;
           }
-          move_string[length] = '\0';
 
-          make_move_jis(child_stdin, child_stdout, board, &board_turn, move_string);
+          jis_make_move(process, board, &board_turn, move_string);
         }
       }
     }
@@ -327,7 +222,7 @@ int main(int argc, char *argv[]) {
 
         if (is_valid(made_move.from)) {
           // Make move on board and tell jazzinsea to update its board as well.
-          make_move_jis(child_stdin, child_stdout, board, &board_turn, made_move.string);
+          jis_make_move(process, board, &board_turn, made_move.string);
           held_piece = POSITION_INV;
 
         } else if (players[board_turn] == GUI &&
@@ -337,8 +232,8 @@ int main(int argc, char *argv[]) {
           get_position_str(held_piece, position_str);
 
           char buffer[256];
-          ask_jis(child_stdin, child_stdout, buffer, sizeof(buffer),
-                  "allmoves %s\n", position_str);
+          jis_ask(process, buffer, sizeof(buffer), "allmoves %s\n",
+                  position_str);
 
           // Add available moves.
           int i = 0;
@@ -356,8 +251,7 @@ int main(int argc, char *argv[]) {
 
             // Ask jazzinsea to describe the move.
             // Every move must originate from the held piece.
-            move result =
-                desc_move_jis(child_stdin, child_stdout, current_move_string);
+            move result = jis_desc_move(process, current_move_string);
             assert(result.from == held_piece);
             available_moves[i++] = result;
 
@@ -378,7 +272,7 @@ int main(int argc, char *argv[]) {
         }
 
         // Make move on board and tell jazzinsea to update its board as well.
-        make_move_jis(child_stdin, child_stdout, board, &board_turn, made_move.string);
+        jis_make_move(process, board, &board_turn, made_move.string);
       }
     }
 
