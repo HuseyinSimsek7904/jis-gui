@@ -2,6 +2,8 @@
 SRCDIR		?= ./src
 OBJDIR		?= ./obj
 BINDIR		?= ./bin
+SHAREDIR	?= ./share
+PREFIX		?= /usr/local
 
 EXECUTABLE	?= $(BINDIR)/jis-gui
 
@@ -34,19 +36,27 @@ build: $(OBJDIRS) $(EXECUTABLE)
 # Header dependencies
 -include $(DEPENDS)
 
-# Binary files
 $(BINDIR):
 	mkdir $(BINDIR)
 
 $(EXECUTABLE): $(OBJECTS) | $(BINDIR)
 	$(CC) $(CFLAGS) $(EXTCFLAGS) $(OBJECTS) $(OBJLIBS) -o $@
 
-# Object files
 $(OBJDIRS):
 	mkdir -p $@
 
 $(OBJDIR)/%.o: $(SRCDIR)/%.c makefile
 	$(CC) $(CFLAGS) $(EXTCFLAGS) -MMD -MP -c $< -o $@
+
+install: $(EXECUTABLE)
+	install -Dm 755 $(BINDIR)/jis-gui $(DESTDIR)$(PREFIX)/bin/jis-gui
+	for path in $$(find $(SHAREDIR) -type f); do \
+		install -Dm 744 $$path "$(DESTDIR)$(PREFIX)/$$path"; \
+	done
+
+uninstall:
+	rm -f $(DESTDIR)$(PREFIX)/bin/jis-gui
+	rm -rf $(DESTDIR)$(PREFIX)/share/jis-gui/
 
 # Miscellaneous
 clean:
