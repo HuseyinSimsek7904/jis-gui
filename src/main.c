@@ -31,6 +31,7 @@ jis-gui. If not, see <https://www.gnu.org/licenses/>.
 #include <string.h>
 #include <sys/poll.h>
 #include <unistd.h>
+#include <libgen.h>
 
 const int GRID_SQUARE_SIZE = 100;
 const float GRID_CIRCLE_RATIO = 0.3;
@@ -90,6 +91,13 @@ move find_move_for_position(move available_moves[4], int position) {
   return (move){.from = POSITION_INV};
 }
 
+Texture2D load_texture_rel(const char *root_path, const char *rel_path) {
+  char path[strlen(root_path) + strlen(rel_path)];
+  strcpy(path, root_path);
+  strcat(path, rel_path);
+  return LoadTexture(path);
+}
+
 int main(int argc, char *argv[]) {
   InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "JazzInSea - Cez GUI");
 
@@ -124,11 +132,19 @@ int main(int argc, char *argv[]) {
     UnloadImage(grid_image);
   }
 
+  // Get the path of the binary to figure out the path of the share directory.
+  // This is not very reliable sadly.
+  const char *bin_path = getenv("_");
+  char root_path[strlen(bin_path) + 16];
+  strcpy(root_path, bin_path);
+  dirname(root_path);
+  strcat(root_path, "/../");
+
   // Load the piece textures.
-  Texture2D white_pawn_texture = LoadTexture("assets/wP.png");
-  Texture2D white_knight_texture = LoadTexture("assets/wN.png");
-  Texture2D black_pawn_texture = LoadTexture("assets/bP.png");
-  Texture2D black_knight_texture = LoadTexture("assets/bN.png");
+  Texture2D white_pawn_texture = load_texture_rel(root_path, "share/jis-gui/wP.png");
+  Texture2D white_knight_texture = load_texture_rel(root_path, "share/jis-gui/wN.png");
+  Texture2D black_pawn_texture = load_texture_rel(root_path, "share/jis-gui/bP.png");
+  Texture2D black_knight_texture = load_texture_rel(root_path, "share/jis-gui/bN.png");
 
   GenTextureMipmaps(&white_pawn_texture);
   GenTextureMipmaps(&white_knight_texture);
