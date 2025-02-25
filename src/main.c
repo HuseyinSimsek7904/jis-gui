@@ -21,6 +21,7 @@ jis-gui. If not, see <https://www.gnu.org/licenses/>.
 #include <raylib.h>
 
 #include <assert.h>
+#include <libgen.h>
 #include <poll.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -31,7 +32,6 @@ jis-gui. If not, see <https://www.gnu.org/licenses/>.
 #include <string.h>
 #include <sys/poll.h>
 #include <unistd.h>
-#include <libgen.h>
 
 const int GRID_SQUARE_SIZE = 100;
 const float GRID_CIRCLE_RATIO = 0.3;
@@ -53,6 +53,10 @@ const Rectangle BOARD_RECT =
 
 const int WINDOW_WIDTH = 1150;
 const int WINDOW_HEIGHT = 900;
+
+const int MOVE_ANIM_FRAMES = 20;
+
+const char *JIS_EXECUTABLE = "jazzinsea";
 
 Vector2 pos_to_window_vec(int pos) {
   return (Vector2){to_col(pos) * GRID_SQUARE_SIZE + BOARD_RECT.x,
@@ -76,7 +80,13 @@ int window_vec_to_id(Vector2 vec) {
           (7 - (int)((vec.y - BOARD_RECT.y) / GRID_SQUARE_SIZE)) * 8);
 }
 
-const char *JIS_EXECUTABLE = "jazzinsea";
+float quad_interpolate(float x) { return 2 * x - x * x; }
+
+Rectangle anim_linint(Rectangle start, Rectangle end, float t) {
+  return (Rectangle){(end.x - start.x) * t + start.x,
+                     (end.y - start.y) * t + start.y, start.width,
+                     start.height};
+}
 
 move find_move_for_position(move available_moves[4], int position) {
   // Iterate through all available moves and check if the 'to' or
@@ -101,7 +111,7 @@ Texture2D load_texture_rel(const char *root_path, const char *rel_path) {
 int main(int argc, char *argv[]) {
   InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "JazzInSea - Cez GUI");
 
-  SetTargetFPS(60);
+  SetTargetFPS(90);
 
   // Create the board grid texture.
   Texture2D grid_texture;
@@ -199,6 +209,8 @@ int main(int argc, char *argv[]) {
   enum { GUI, AI } players[2] = {AI, GUI};
   bool asked_for_move = false;
 
+  uint anim_counter = MOVE_ANIM_FRAMES;
+
   while (!WindowShouldClose()) {
     Vector2 mouse_vec = GetMousePosition();
 
@@ -226,6 +238,7 @@ int main(int argc, char *argv[]) {
 
           jis_make_move(process, board, &board_turn, &board_status, move_string,
                         &last_move);
+          anim_counter = 0;
 
           // If there is a selected piece, generated moves for it.
           if (is_valid(selected_piece)) {
@@ -253,6 +266,7 @@ int main(int argc, char *argv[]) {
           // Make move on board and tell jazzinsea to update its board as well.
           jis_make_move(process, board, &board_turn, &board_status,
                         made_move.string, &last_move);
+          anim_counter = 0;
           selected_piece = POSITION_INV;
 
         } else if (players[board_turn] == GUI &&
@@ -307,6 +321,7 @@ int main(int argc, char *argv[]) {
           // Make move on board and tell jazzinsea to update its board as well.
           jis_make_move(process, board, &board_turn, &board_status,
                         made_move.string, &last_move);
+          anim_counter = MOVE_ANIM_FRAMES;
         }
       }
     }
@@ -350,10 +365,21 @@ int main(int argc, char *argv[]) {
       }
 
       Rectangle rect;
-      if (position == selected_piece && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+      if (last_move.to == position && anim_counter < MOVE_ANIM_FRAMES) {
+
+        Rectangle start_rect = pos_to_window_rect(last_move.from);
+        Rectangle end_rect = pos_to_window_rect(last_move.to);
+
+        rect = anim_linint(
+            start_rect, end_rect,
+            quad_interpolate((float)anim_counter / MOVE_ANIM_FRAMES));
+
+      } else if (position == selected_piece &&
+                 IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
         int x = (int)(mouse_vec.x) - GRID_SQUARE_SIZE / 2;
         int y = (int)(mouse_vec.y) - GRID_SQUARE_SIZE / 2;
         rect = (Rectangle){x, y, GRID_SQUARE_SIZE, GRID_SQUARE_SIZE};
+
       } else {
         rect = pos_to_window_rect(position);
       }
@@ -406,6 +432,10 @@ int main(int argc, char *argv[]) {
     DrawText(status_text, 900, 50, 30, WHITE);
 
     EndDrawing();
+
+    if (anim_counter < MOVE_ANIM_FRAMES) {
+      anim_counter++;
+    }
   }
 
   // Deinitialize resources.
