@@ -20,6 +20,7 @@ jis-gui. If not, see <https://www.gnu.org/licenses/>.
 
 #include <assert.h>
 #include <poll.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -70,17 +71,20 @@ bool jis_create_proc(jis_process *process) {
   close(child_stdin_pipe[0]);
   close(child_stdout_pipe[1]);
 
+  process->child_pid = pid;
   process->child_stdin = child_stdin_pipe[1];
   process->child_stdout = child_stdout_pipe[0];
 
   return true;
 }
 
-int jis_read(jis_process process, char *buffer, size_t buffer_size) {
-  int length = read(process.child_stdout, buffer, buffer_size - 1);
+void jis_kill_proc(jis_process *process) { kill(process->child_pid, SIGKILL); }
+
+int jis_read(jis_process *process, char *buffer, size_t buffer_size) {
+  int length = read(process->child_stdout, buffer, buffer_size - 1);
   if (length < 0) {
     fprintf(stderr, "error: reading from %s failed\n",
-            process.child_executable);
+            process->child_executable);
     perror("read");
     return length;
   }
@@ -88,16 +92,16 @@ int jis_read(jis_process process, char *buffer, size_t buffer_size) {
   return length;
 }
 
-int jis_ask(jis_process process, char *buffer, size_t buffer_size,
+int jis_ask(jis_process *process, char *buffer, size_t buffer_size,
             const char *format, ...) {
   va_list args;
   va_start(args, format);
 
-  vdprintf(process.child_stdin, format, args);
+  vdprintf(process->child_stdin, format, args);
   return jis_read(process, buffer, buffer_size);
 }
 
-move jis_desc_move(jis_process process, char *string) {
+move jis_desc_move(jis_process *process, char *string) {
   // Ask jazzinsea to describe a move.
   // This will fill the buffer with 'from', 'to' and 'capture'
   // position strings seperated by spaces.
@@ -128,7 +132,7 @@ move jis_desc_move(jis_process process, char *string) {
   return result;
 }
 
-bool jis_copy_position(jis_process process, char *board, bool *board_turn,
+bool jis_copy_position(jis_process *process, char *board, bool *board_turn,
                        int *board_status) {
   char buffer[256];
   int length = jis_ask(process, buffer, sizeof(buffer), "savefen\n");
@@ -144,19 +148,18 @@ bool jis_copy_position(jis_process process, char *board, bool *board_turn,
   return true;
 }
 
-bool jis_make_move(jis_process process, char *board, bool *board_turn,
-                   int *board_status, char *move_string, move *last_move) {
-  dprintf(process.child_stdin, "makemove %s\n", move_string);
-  *last_move = jis_desc_move(process, move_string);
+bool jis_make_move(jis_process *process, char *board, bool *board_turn,
+                   int *board_status, char *move_string) {
+  dprintf(process->child_stdin, "makemove %s\n", move_string);
   return jis_copy_position(process, board, board_turn, board_status);
 }
 
-void jis_start_eval_r(jis_process process) {
-  dprintf(process.child_stdin, "evaluate -r\n");
+void jis_start_eval_r(jis_process *process) {
+  dprintf(process->child_stdin, "evaluate -r\n");
 }
 
-int jis_poll(jis_process process) {
-  struct pollfd pollfd = {process.child_stdout, POLLIN};
+int jis_poll(jis_process *process) {
+  struct pollfd pollfd = {process->child_stdout, POLLIN};
   int result = poll(&pollfd, 1, 0);
 
   if (result < 0) {
@@ -166,7 +169,7 @@ int jis_poll(jis_process process) {
   return result;
 }
 
-bool jis_ask_avail_moves(jis_process process, int from_position,
+bool jis_ask_avail_moves(jis_process *process, int from_position,
                          move available_moves[4]) {
   char position_str[3];
   get_position_str(from_position, position_str);
@@ -181,7 +184,7 @@ bool jis_ask_avail_moves(jis_process process, int from_position,
     char *new = strchr(current_move_string, ' ');
     if (!new) {
       fprintf(stderr, "error: invalid moves list from %s\n",
-              process.child_executable);
+              process->child_executable);
       return false;
     }
     *new = '\0';

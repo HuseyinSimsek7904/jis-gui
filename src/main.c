@@ -194,7 +194,7 @@ int main(int argc, char *argv[]) {
   char board[64];
   bool board_turn;
   int board_status;
-  jis_copy_position(process, board, &board_turn, &board_status);
+  jis_copy_position(&process, board, &board_turn, &board_status);
 
   // The user interface states.
   int selected_piece = POSITION_INV;
@@ -217,12 +217,12 @@ int main(int argc, char *argv[]) {
     if (players[board_turn] == AI) {
       if (!asked_for_move) {
         // Ask the AI for a move.
-        jis_start_eval_r(process);
+        jis_start_eval_r(&process);
         asked_for_move = true;
 
       } else {
         // Check if AI returned a move.
-        int result = jis_poll(process);
+        int result = jis_poll(&process);
 
         if (result < 0)
           return 1;
@@ -232,17 +232,17 @@ int main(int argc, char *argv[]) {
 
           // Child returned, make the generated move.
           char move_string[8];
-          if (jis_read(process, move_string, sizeof(move_string)) < 0) {
+          if (jis_read(&process, move_string, sizeof(move_string)) < 0) {
             return 1;
           }
 
-          jis_make_move(process, board, &board_turn, &board_status, move_string,
-                        &last_move);
+          jis_make_move(&process, board, &board_turn, &board_status, move_string);
+          last_move = jis_desc_move(&process, move_string);
           anim_counter = 0;
 
           // If there is a selected piece, generated moves for it.
           if (is_valid(selected_piece)) {
-            jis_ask_avail_moves(process, selected_piece, available_moves);
+            jis_ask_avail_moves(&process, selected_piece, available_moves);
           }
         }
       }
@@ -264,8 +264,9 @@ int main(int argc, char *argv[]) {
 
         if (is_valid(made_move.from)) {
           // Make move on board and tell jazzinsea to update its board as well.
-          jis_make_move(process, board, &board_turn, &board_status,
-                        made_move.string, &last_move);
+          jis_make_move(&process, board, &board_turn, &board_status,
+                        made_move.string);
+          last_move = made_move;
           anim_counter = 0;
           selected_piece = POSITION_INV;
 
@@ -276,7 +277,7 @@ int main(int argc, char *argv[]) {
           get_position_str(selected_piece, position_str);
 
           char buffer[256];
-          jis_ask(process, buffer, sizeof(buffer), "allmoves %s\n",
+          jis_ask(&process, buffer, sizeof(buffer), "allmoves %s\n",
                   position_str);
 
           // Add available moves.
@@ -295,7 +296,7 @@ int main(int argc, char *argv[]) {
 
             // Ask jazzinsea to describe the move.
             // Every move must originate from the held piece.
-            move result = jis_desc_move(process, current_move_string);
+            move result = jis_desc_move(&process, current_move_string);
             assert(result.from == selected_piece);
             available_moves[i++] = result;
 
@@ -319,8 +320,9 @@ int main(int argc, char *argv[]) {
           }
 
           // Make move on board and tell jazzinsea to update its board as well.
-          jis_make_move(process, board, &board_turn, &board_status,
-                        made_move.string, &last_move);
+          jis_make_move(&process, board, &board_turn, &board_status,
+                        made_move.string);
+          last_move = made_move;
           anim_counter = MOVE_ANIM_FRAMES;
         }
       }
@@ -445,5 +447,8 @@ int main(int argc, char *argv[]) {
   UnloadTexture(black_pawn_texture);
   UnloadTexture(black_knight_texture);
   UnloadTexture(circle_texture);
+  // Make sure the jis process is no more.
+  jis_kill_proc(&process);
+
   CloseWindow();
 }
