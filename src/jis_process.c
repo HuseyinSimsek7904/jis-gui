@@ -84,7 +84,7 @@ int jis_read(jis_process process, char *buffer, size_t buffer_size) {
     perror("read");
     return length;
   }
-  buffer[length] = '\0';
+  buffer[length - 1] = '\0';
   return length;
 }
 
