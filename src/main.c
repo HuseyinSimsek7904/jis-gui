@@ -15,6 +15,7 @@ jis-gui. If not, see <https://www.gnu.org/licenses/>.
 */
 
 #include "fen.h"
+#include "gui.h"
 #include "jis_process.h"
 #include "position.h"
 
@@ -33,156 +34,14 @@ jis-gui. If not, see <https://www.gnu.org/licenses/>.
 #include <sys/poll.h>
 #include <unistd.h>
 
-const int GRID_SQUARE_SIZE = 100;
-const float GRID_CIRCLE_RATIO = 0.3;
-
-const Color BACKGROUND_COLOR = (Color){0x20, 0x20, 0x20, 0xff};
-const Color GRID_WHITE_COLOR = (Color){0xf0, 0xf0, 0xf0, 0xff};
-const Color GRID_BLACK_COLOR = (Color){0xa0, 0xa0, 0xa0, 0xff};
-const Color GRID_HELD_COLOR = (Color){0xcc, 0xaa, 0x22, 0x80};
-
-const Color CIRCLE_TO_COLOR = (Color){0x55, 0x55, 0x55, 0x80};
-const Color CIRCLE_CAPTURE_COLOR = (Color){0xff, 0x00, 0x00, 0x80};
-
-const Color LAST_MOVE_FROM_COLOR = (Color){0x66, 0xff, 0xff, 0x80};
-const Color LAST_MOVE_TO_COLOR = (Color){0x66, 0xff, 0xff, 0x60};
-
-const Rectangle HISTORY_RECT = (Rectangle){900, 80, 200, 200};
-const Rectangle BOARD_RECT =
-    (Rectangle){50, 50, 8 * GRID_SQUARE_SIZE, 8 * GRID_SQUARE_SIZE};
-
-const int WINDOW_WIDTH = 1150;
-const int WINDOW_HEIGHT = 900;
-
-const int MOVE_ANIM_FRAMES = 20;
-
 const char *JIS_EXECUTABLE = "jazzinsea";
 
-Vector2 pos_to_window_vec(int pos) {
-  return (Vector2){to_col(pos) * GRID_SQUARE_SIZE + BOARD_RECT.x,
-                   (7 - to_row(pos)) * GRID_SQUARE_SIZE + BOARD_RECT.y};
-}
-
-Vector2 pos_to_window_vec_center(int pos) {
-  return (Vector2){(to_col(pos) - 0.5) * GRID_SQUARE_SIZE + BOARD_RECT.x +
-                       GRID_SQUARE_SIZE,
-                   (7.5 - to_row(pos)) * GRID_SQUARE_SIZE + BOARD_RECT.y};
-}
-
-Rectangle pos_to_window_rect(int pos) {
-  return (Rectangle){to_col(pos) * GRID_SQUARE_SIZE + BOARD_RECT.x,
-                     (7 - to_row(pos)) * GRID_SQUARE_SIZE + BOARD_RECT.y,
-                     GRID_SQUARE_SIZE, GRID_SQUARE_SIZE};
-}
-
-int window_vec_to_id(Vector2 vec) {
-  return ((int)((vec.x - BOARD_RECT.x) / GRID_SQUARE_SIZE) +
-          (7 - (int)((vec.y - BOARD_RECT.y) / GRID_SQUARE_SIZE)) * 8);
-}
-
-float quad_interpolate(float x) { return 2 * x - x * x; }
-
-Rectangle anim_linint(Rectangle start, Rectangle end, float t) {
-  return (Rectangle){(end.x - start.x) * t + start.x,
-                     (end.y - start.y) * t + start.y, start.width,
-                     start.height};
-}
-
-move find_move_for_position(move available_moves[4], int position) {
-  // Iterate through all available moves and check if the 'to' or
-  // 'capture' positions matches.
-  for (int i = 0; i < 4; i++) {
-    move move = available_moves[i];
-
-    if (move.to == position || move.capture == position)
-      return move;
-  }
-
-  return (move){.from = POSITION_INV};
-}
-
-Texture2D load_texture_rel(const char *root_path, const char *rel_path) {
-  char path[strlen(root_path) + strlen(rel_path)];
-  strcpy(path, root_path);
-  strcat(path, rel_path);
-  return LoadTexture(path);
-}
-
 int main(int argc, char *argv[]) {
-  InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "JazzInSea - Cez GUI");
+  gui_init();
 
-  SetTargetFPS(90);
-
-  // Create the board grid texture.
-  Texture2D grid_texture;
-  {
-    Color *pixel_data =
-        malloc(64 * GRID_SQUARE_SIZE * GRID_SQUARE_SIZE * sizeof(Color));
-
-    if (!pixel_data) {
-      fprintf(stderr, "error: malloc failed\n");
-      perror("malloc");
-      return 1;
-    }
-
-    // I do not believe that's the best way to do this.
-    // Rows are flipped since the topmost row is the 0th row.
-    for (int row = 0; row < 8 * GRID_SQUARE_SIZE; row++) {
-      for (int col = 0; col < 8 * GRID_SQUARE_SIZE; col++) {
-        pixel_data[row * 8 * GRID_SQUARE_SIZE + col] =
-            (row / GRID_SQUARE_SIZE + col / GRID_SQUARE_SIZE) % 2
-                ? GRID_BLACK_COLOR
-                : GRID_WHITE_COLOR;
-      }
-    }
-
-    Image grid_image = {pixel_data, 8 * GRID_SQUARE_SIZE, 8 * GRID_SQUARE_SIZE,
-                        1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8};
-    grid_texture = LoadTextureFromImage(grid_image);
-    UnloadImage(grid_image);
-  }
-
-  // Get the path of the binary to figure out the path of the share directory.
-  // This is not very reliable sadly.
-  const char *bin_path = getenv("_");
-  char root_path[strlen(bin_path) + 16];
-  strcpy(root_path, bin_path);
-  dirname(root_path);
-  strcat(root_path, "/../");
-
-  // Load the piece textures.
-  Texture2D white_pawn_texture = load_texture_rel(root_path, "share/jis-gui/wP.png");
-  Texture2D white_knight_texture = load_texture_rel(root_path, "share/jis-gui/wN.png");
-  Texture2D black_pawn_texture = load_texture_rel(root_path, "share/jis-gui/bP.png");
-  Texture2D black_knight_texture = load_texture_rel(root_path, "share/jis-gui/bN.png");
-
-  GenTextureMipmaps(&white_pawn_texture);
-  GenTextureMipmaps(&white_knight_texture);
-  GenTextureMipmaps(&black_pawn_texture);
-  GenTextureMipmaps(&black_knight_texture);
-
-  SetTextureFilter(white_pawn_texture, TEXTURE_FILTER_TRILINEAR);
-  SetTextureFilter(white_knight_texture, TEXTURE_FILTER_TRILINEAR);
-  SetTextureFilter(black_pawn_texture, TEXTURE_FILTER_TRILINEAR);
-  SetTextureFilter(black_knight_texture, TEXTURE_FILTER_TRILINEAR);
-
-  // Create a circle texture which can be used to indicate the move target
-  // squares.
-  Texture2D circle_texture;
-  {
-    Image circle_image =
-        GenImageColor(GRID_SQUARE_SIZE * 2, GRID_SQUARE_SIZE * 2, BLANK);
-
-    ImageDrawCircle(&circle_image, GRID_SQUARE_SIZE, GRID_SQUARE_SIZE,
-                    GRID_SQUARE_SIZE * GRID_CIRCLE_RATIO, WHITE);
-
-    circle_texture = LoadTextureFromImage(circle_image);
-
-    GenTextureMipmaps(&circle_texture);
-    SetTextureFilter(circle_texture, TEXTURE_FILTER_TRILINEAR);
-
-    UnloadImage(circle_image);
-  }
+  // Load the assets.
+  assets gui_assets;
+  gui_load_assets(&gui_assets);
 
   // Try to create a JazzInSea process.
   jis_process process = {.child_executable = JIS_EXECUTABLE};
@@ -236,8 +95,8 @@ int main(int argc, char *argv[]) {
             return 1;
           }
 
-          jis_make_move(&process, board, &board_turn, &board_status, move_string);
-          last_move = jis_desc_move(&process, move_string);
+          gui_make_move(&process, &gui_assets, board, &board_turn,
+                        &board_status, move_string, &last_move);
           anim_counter = 0;
 
           // If there is a selected piece, generated moves for it.
@@ -264,9 +123,8 @@ int main(int argc, char *argv[]) {
 
         if (is_valid(made_move.from)) {
           // Make move on board and tell jazzinsea to update its board as well.
-          jis_make_move(&process, board, &board_turn, &board_status,
-                        made_move.string);
-          last_move = made_move;
+          gui_make_move(&process, &gui_assets, board, &board_turn,
+                        &board_status, made_move.string, &last_move);
           anim_counter = 0;
           selected_piece = POSITION_INV;
 
@@ -319,10 +177,8 @@ int main(int argc, char *argv[]) {
             available_moves[i].from = POSITION_INV;
           }
 
-          // Make move on board and tell jazzinsea to update its board as well.
-          jis_make_move(&process, board, &board_turn, &board_status,
-                        made_move.string);
-          last_move = made_move;
+          gui_make_move(&process, &gui_assets, board, &board_turn,
+                        &board_status, made_move.string, &last_move);
           anim_counter = MOVE_ANIM_FRAMES;
         }
       }
@@ -332,8 +188,9 @@ int main(int argc, char *argv[]) {
     BeginDrawing();
     ClearBackground(BACKGROUND_COLOR);
 
-    DrawTextureRec(grid_texture,
-                   (Rectangle){0, 0, grid_texture.width, grid_texture.height},
+    DrawTextureRec(gui_assets.grid_texture,
+                   (Rectangle){0, 0, gui_assets.grid_texture.width,
+                               gui_assets.grid_texture.height},
                    (Vector2){BOARD_RECT.x, BOARD_RECT.y}, WHITE);
 
     if (is_valid(selected_piece) && selected_piece != last_move.to) {
@@ -351,16 +208,16 @@ int main(int argc, char *argv[]) {
       Texture2D *texture;
       switch (board[position]) {
       case 'P':
-        texture = &white_pawn_texture;
+        texture = &gui_assets.white_pawn_texture;
         break;
       case 'N':
-        texture = &white_knight_texture;
+        texture = &gui_assets.white_knight_texture;
         break;
       case 'p':
-        texture = &black_pawn_texture;
+        texture = &gui_assets.black_pawn_texture;
         break;
       case 'n':
-        texture = &black_knight_texture;
+        texture = &gui_assets.black_knight_texture;
         break;
       default:
         continue;
@@ -399,17 +256,18 @@ int main(int argc, char *argv[]) {
       if (!is_valid(move.from))
         continue;
 
-      DrawTexturePro(
-          circle_texture,
-          (Rectangle){0, 0, circle_texture.width, circle_texture.height},
-          pos_to_window_rect(move.to), (Vector2){0, 0}, 0, CIRCLE_TO_COLOR);
+      DrawTexturePro(gui_assets.circle_texture,
+                     (Rectangle){0, 0, gui_assets.circle_texture.width,
+                                 gui_assets.circle_texture.height},
+                     pos_to_window_rect(move.to), (Vector2){0, 0}, 0,
+                     CIRCLE_TO_COLOR);
 
       if (is_valid(move.capture))
-        DrawTexturePro(
-            circle_texture,
-            (Rectangle){0, 0, circle_texture.width, circle_texture.height},
-            pos_to_window_rect(move.capture), (Vector2){0, 0}, 0,
-            CIRCLE_CAPTURE_COLOR);
+        DrawTexturePro(gui_assets.circle_texture,
+                       (Rectangle){0, 0, gui_assets.circle_texture.width,
+                                   gui_assets.circle_texture.height},
+                       pos_to_window_rect(move.capture), (Vector2){0, 0}, 0,
+                       CIRCLE_CAPTURE_COLOR);
     }
 
     // Draw status text.
@@ -440,15 +298,11 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  // Deinitialize resources.
-  UnloadTexture(grid_texture);
-  UnloadTexture(white_pawn_texture);
-  UnloadTexture(white_knight_texture);
-  UnloadTexture(black_pawn_texture);
-  UnloadTexture(black_knight_texture);
-  UnloadTexture(circle_texture);
   // Make sure the jis process is no more.
   jis_kill_proc(&process);
+
+  // Unload the assets.
+  gui_unload_assets(&gui_assets);
 
   CloseWindow();
 }
