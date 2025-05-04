@@ -11,7 +11,7 @@ This software (and Jazz In Sea) is licensed under the GPLv3.
 
 ## Installing from source
 
-Make sure you installed `jazzinsea`. You can check the installation instructions [here](github.com/HuseyinSimsek7904/jazz-in-sea.git).
+Make sure you installed `jazzinsea`. You can check the installation instructions [here](github.com/HuseyinSimsek7904/jazz-in-sea).
 
 Then, just build the binary,
 
